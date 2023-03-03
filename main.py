@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """DiscoLisko - Sound Reactive Lights with Python and Philips Hue"""
+from queue import LifoQueue
 import sys
 from time import sleep
 from xml.dom.minidom import CDATASection
@@ -7,7 +8,7 @@ import numpy as np
 import sounddevice as sd
 from hue_api import HueApi, exceptions as huex
 
-BRIDGE_IP_ADDRESS = "192.168.1.4"
+BRIDGE_IP_ADDRESS = "192.168.0.176"
 
 
 def attempt_connection(api: HueApi):
@@ -47,6 +48,9 @@ def main():
     for light in lights:
         light.set_on()
 
+    # Use a LIFO queue to store the last 100 volume values
+    running_window: LifoQueue[int] = LifoQueue(maxsize=100)
+
     def callback(
         indata: np.ndarray,
         _frames: int,
@@ -56,29 +60,45 @@ def main():
         if status:
             print(status)
 
-        avg_volume = rms(indata)
-        # print(f"Average volume: {avg_volume}")
+        data_channel_avg = rms(indata)
+        if running_window.full():
+            running_window.get()
+        data_avg = np.average(data_channel_avg, axis=0)
+        running_window.put(data_avg)
 
-        # Volume thresholds have to be adjusted depending on the environment
-        # and the microphone used
-        match avg_volume:
-            case avg_volume if avg_volume > 0.1:
-                for light in lights:
-                    light.set_brightness(255)
-            case avg_volume if avg_volume > 0.05:
-                for light in lights:
-                    light.set_brightness(128)
-            case _:
-                for light in lights:
-                    light.set_brightness(0)
-
-    stream = sd.InputStream(channels=1, callback=callback)
+    stream = sd.InputStream(channels=2, callback=callback)
 
     try:
         print("Press Ctrl+C to stop the recording")
         stream.start()
         while True:
-            pass
+            # Update the lights every 100ms
+            sleep(0.1)
+
+            # Volume thresholds have to be adjusted depending on the environment
+            # and the microphone used
+            avg_volume = np.average(running_window.queue)
+            print(f"Average volume: {avg_volume}")
+            match (avg_volume):
+                case avg_volume if avg_volume > 0.4:
+                    for light in lights:
+                        light.set_brightness(255)
+                        light.set_color(3, 128)
+                case avg_volume if avg_volume > 0.3:
+                    for light in lights:
+                        light.set_brightness(196)
+                        light.set_color(3, 128)
+                case avg_volume if avg_volume > 0.2:
+                    for light in lights:
+                        light.set_brightness(164)
+                        light.set_color(3, 128)
+                case avg_volume if avg_volume > 0.1:
+                    for light in lights:
+                        light.set_brightness(128)
+                        light.set_color(3, 128)
+                case _:
+                    for light in lights:
+                        light.set_brightness(0)
     except KeyboardInterrupt:
         print("Interrupted by user")
         stream.abort()
