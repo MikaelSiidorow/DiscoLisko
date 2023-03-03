@@ -4,6 +4,11 @@
 2. `ifconfig` --> find your local IP ie. `inet 192.168.1.10  netmask 255.255.255.0`
 3. `sudo nmap -sn 192.168.1.0/24` or corresponding ip if different in step 2
 
+Alternative easier method
+
+1. `sudo apt install arp-scan`
+2. `sudo arp-scan --interface=eht0 --localnet` or swap interface with device found with `ifconfig`
+
 ## Running the script
 
 1. `sudo apt install libportaudio2` (required for sounddevice)
